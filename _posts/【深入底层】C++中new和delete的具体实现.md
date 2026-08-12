@@ -551,3 +551,192 @@ _GLIBCXX_PLACEMENT_CONSTEXPR void operator delete[](void*, void*)
 #undef _GLIBCXX_PLACEMENT_CONSTEXPR
 ~~~
 
+---
+
+## 重载内存分配与释放
+
+### new 与 delete 的工作原理
+
+#### new 的执行流程
+```cpp
+Role* user = new Role();
+```
+1. 调用 `operator new()` 分配原始内存  
+2. 在该内存上调用构造函数  
+3. 返回指向对象的指针  
+
+#### delete 的执行流程
+```cpp
+delete user;
+```
+1. 调用对象的析构函数  
+2. 调用 `operator delete()` 释放内存  
+
+---
+
+### 重载内存分配与释放函数
+
+内存分配在 C++ 中扮演重要角色。重载这些函数通常是为了优化内存管理，尤其常见于解决**内存碎片**问题。
+
+C++ 提供了六种可重载的 `operator new` 形式：
+
+```cpp
+void* operator new (size_t size);                                       // 普通分配
+void* operator new[](size_t size);                                     // 数组分配
+void* operator new (size_t size, const std::nothrow_t&) noexcept;      // 不抛异常的普通分配
+void* operator new[](size_t size, const std::nothrow_t&) noexcept;    // 不抛异常的数组分配
+```
+
+---
+
+### 禁止重载的两种形式
+
+以下两种 **placement new** 基础版本由 C++ 标准规定**不可重载**：
+
+```cpp
+void* operator new (size_t size, void* p) noexcept;     // placement new
+void* operator new[](size_t size, void* p) noexcept;   // placement new[]（数组版本）
+```
+
+> **提示：**  
+> - 使用 `new` 关键字时，编译器会根据类型自动计算并传入 `size` 参数，无需手动指定。  
+> - 若希望调用带额外参数的 `operator new` 重载（如 placement new），可使用 `new((void*)p)` 语法关键字。  
+> - 无论调用哪个版本的 `operator new`，编译器最终都会根据类型自动调用对应的构造函数。
+
+---
+
+### 重载带有额外参数的 new 和 delete
+
+为了方便和提高灵活性，可以重载带有额外参数的 `new` 和 `delete` 版本：
+
+```cpp
+void* operator new(size_t size, const char* meminfo);
+void* operator delete(void* addr, const char* meminfo) noexcept;
+```
+
+> **注意：**  
+> - 带额外参数的 `operator delete` **不能由程序员手动调用**。  
+> - 该重载版本的 `operator delete` 仅在以下特殊情况由系统自动触发：  
+>   - 当对应的 `operator new` 成功分配内存后，  
+>   - 但对象的**构造函数抛出异常**时，  
+>   - 系统会自动调用与 `operator new` 参数匹配的 `operator delete` 版本，用于清理和释放资源。
+
+---
+
+### 重载的具体实现
+
+可以在类中用成员函数重载，也可以用全局函数重载。以下使用**类的方法**进行重载。
+
+#### 关键注意事项
+
+**1. `operator new` 的静态属性**  
+使用类的方法重载时，编译器会自动把重载的 `operator new()` 函数变为 `static` 属性。
+
+**2. 删除不想要的重载版本**  
+可以在类中将不想要的重载方法用 `= delete` 删除。其背后的原理是：  
+编译器使用 `new` 关键字时调用的其实是 `类型::operator new(size_t)`，而编译器默认的定义大致为：
+
+```cpp
+void* 类型::operator new(size_t) {
+    return ::operator new(size_t);
+}
+```
+
+由于类的方法具有 `inline` 属性，编译器会直接优化成调用全局的 `::operator new(size_t)`，因此汇编代码中体现的就是直接 `call operator new(size_t)`。
+
+**3. `new` 关键字与参数传递**  
+使用 `new` 关键字时，编译器会自动将类型的 `size` 传入 `operator new(size_t)` 作为第一个参数。如果想传入更多参数，可以实现 `operator new(size_t, param1, param2)` 的重载，然后使用 `new(param1, param2)` 语法让编译器调用对应的重载函数。
+
+**4. `delete` 关键字与参数传递**  
+原来的编译器使用 `delete` 关键字时，实际调用的是 `operator delete(void* p, size_t size)`，根据要释放的指针类型传入地址和类型大小。其默认实现为：
+
+```cpp
+void operator delete(void* p, size_t size) {
+    ::operator delete(p);   // 忽略传入的 size
+}
+```
+
+用户重载 `operator delete()` 后，编译器调用逻辑有所不同：
+
+- 如果实现的是 `operator delete(void* p)`，使用 `delete p` 时编译器仅传入指针 `p`。
+- 如果实现的是 `operator delete(void* p, size_t size)`，使用 `delete p` 时编译器会额外传入指针所指向类型的大小。
+- 如果两者都实现，**编译器只会调用 `operator delete(void* p)`**。
+
+**5. `delete` 语法限制**  
+`delete p` 关键字的语法只有这一种，**不支持**像 `new` 那样加括号传入参数的方式（即 `delete(xxx) p` 是不允许的）。
+
+**6. 配套实现建议**  
+如果实现了 `operator new(size_t, const char*)`，建议也实现对应的 `operator delete(void*, const char*)`。虽然无法通过 `delete(xxx) p` 语法手动调用，但编译器可能在异常处理等场景中自动调用，因此仍需实现。
+
+---
+
+### 代码示例
+
+```cpp
+class Bullet {
+private:
+    bool used = true;
+public:
+    static char* mem;
+    float x, y, z;
+    float damage;
+
+    ~Bullet() {
+        used = false;
+    }
+
+    // 重载 operator new
+    void* operator new(size_t size);
+    void* operator new(size_t size, const char* msg);
+
+    // 重载 operator delete
+    // void operator delete(void* p) noexcept;
+    void operator delete(void* p, size_t size) noexcept;
+    void operator delete(void* p, const char* msg) noexcept;
+
+    // 删除不需要的版本
+    void* operator new[](size_t size) = delete;
+    void operator delete[](void* p) = delete;
+};
+
+// 静态内存池
+char* Bullet::mem = new char[1000 * sizeof(Bullet)] {};
+
+// 重载 operator new：从内存池中分配
+void* Bullet::operator new(size_t size) {
+    Bullet* bullet = (Bullet*)mem;
+    for (int i = 0; i < 1000; i++)
+        if (!bullet[i].used) return &bullet[i];
+    return nullptr;   // 实际应有处理逻辑
+}
+
+// 重载 operator new：带额外参数
+void* Bullet::operator new(size_t size, const char* msg) {
+    std::cout << msg << std::endl;
+    return mem;
+}
+
+// 重载 operator delete：带 size 参数
+void Bullet::operator delete(void* p, size_t size) noexcept {
+    std::cout << "释放内存: " << size << std::endl;
+}
+
+// 重载 operator delete：带额外参数（异常时自动调用）
+void Bullet::operator delete(void* p, const char* msg) noexcept {
+    std::cout << "释放内存: " << msg << std::endl;
+}
+
+int main() {
+    Bullet* b1 = new Bullet;
+    std::cout << b1 << std::endl;
+    
+    Bullet* b2 = new Bullet;
+    std::cout << b2 << std::endl;
+    
+    delete b1;   // 调用 operator delete(void* p, size_t size)
+    
+    Bullet* b3 = new Bullet;
+    std::cout << b3 << std::endl;
+}
+```
+

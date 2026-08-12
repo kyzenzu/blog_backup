@@ -1525,13 +1525,13 @@ if (c->isSlotObject) {
 
 * ConnectionLists[]存储Connection*指针，对应的就是该对象的当前信号signal的所有connection
 
-* connect()函数做的就是制作signal和sigal的connection然后把它插入到对应signal的ConnectionList中
+* connect()函数做的就是制作signal和slot的connection然后把它插入到对应signal的ConnectionList中
 
 * 旧式connect(SIGNAL()，SLOT())信号被激活时需要用到控件的QMetaObject中类似函数表的东西，通过函数的索引值得到函数的地址然后去调用槽函数
 
 * 新式connect(&成员函数地址)和connect(lambda)就需要在connection中添加一个是否为`SlotObject`的选项，然后把槽函数包装成函数对象存储在connection中。信号被激活时就会直接调用这个槽函数对象。
 
-* 信号signal函数由`MOC`来生成，它会同意调用`activate()`激活函数。这个激活函数内部做的就是**遍历**信号signal下标对应的`ConnectionList`，把**链表**中每个结点里的**槽函数**都调用一遍。
+* 信号signal函数由`MOC`来生成，它会统一调用`activate()`激活函数。这个激活函数内部做的就是**遍历**信号signal下标对应的`ConnectionList`，把**链表**中每个结点里的**槽函数**都调用一遍。
 
 ![00](../posts_img/【Qt】Qt初学的两个核心问题/connect.png)
 
