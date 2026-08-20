@@ -41,10 +41,10 @@ tags:
 
 ### 4. 打印字符相关
 
-| 函数                 | 功能描述                         | 区别说明                               | 示例                                       |
-| -------------------- | -------------------------------- | -------------------------------------- | ------------------------------------------ |
-| `int isprint(int c)` | 测试字符是否为**可打印字符**     | **包含空格**，因为空格可以在输出时看见 | `isprint(' ')` → 真<br>`isprint('A')` → 真 |
-| `int isgraph(int c)` | 测试字符是否为**可图形化字符**。 | **不包含空格**，因为空格不能图形化     | `isgraph(' ')` → 假<br>`isgraph('A')` → 真 |
+| 函数                 | 功能描述                         | 区别说明                               | 示例                                                         |
+| -------------------- | -------------------------------- | -------------------------------------- | ------------------------------------------------------------ |
+| `int isprint(int c)` | 测试字符是否为**可打印字符**     | **包含空格**，因为空格可以在输出时看见 | `isprint(' ')` → 真<br>`isprint('A')` → 真<br>`isprint('\t') `→ 假 |
+| `int isgraph(int c)` | 测试字符是否为**可图形化字符**。 | **不包含空格**，因为空格不能图形化     | `isgraph(' ')` → 假<br>`isprint('\t')` → 假<br/>`isgraph('A')` → 真 |
 
 **注意**：`isprint()` 的范围比 `isgraph()` 多一个空格字符。
 
@@ -57,10 +57,10 @@ tags:
 
 ### 6. 其他
 
-| 函数                 | 功能描述                                                     | 示例                                       |
-| -------------------- | ------------------------------------------------------------ | ------------------------------------------ |
-| `int iscntrl(int c)` | 测试字符是否为ASCII控制字符 (0-31, 127)                      | `iscntrl('\n')` → 真                       |
-| `int ispunct(int c)` | 测试字符是否为标点符号或特殊符号（非空格、非字母、非数字的可打印字符） | `ispunct('.')` → 真<br>`ispunct('!')` → 真 |
+| 函数                 | 功能描述                                                     | 示例                                         |
+| -------------------- | ------------------------------------------------------------ | -------------------------------------------- |
+| `int iscntrl(int c)` | 测试字符是否为ASCII控制字符 (0-31, 127)                      | `iscntrl('\n')` → 真<br>`iscntrl('\t')` → 真 |
+| `int ispunct(int c)` | 测试字符是否为标点符号或特殊符号（非空格、非字母、非数字的可打印字符） | `ispunct('.')` → 真<br>`ispunct('!')` → 真   |
 
 ---
 
@@ -76,95 +76,44 @@ tags:
 ## 三、完整示例代码
 
 ```cpp
-#include <stdio.h>
+#include <iostream>
 #include <ctype.h>
 #include <string.h>
+#include <stdlib.h>
 
-// 演示字符分类函数的使用
-void demonstrate_char_functions() {
-    const char* str = "Hello World\r\n你好世界\r\n2026-01-01";
-    int alnum_cnt = 0, alpha_cnt = 0, digit_cnt = 0;
-    int blank_cnt = 0, space_cnt = 0;
-    int print_cnt = 0, graph_cnt = 0;
-    int upper_cnt = 0, lower_cnt = 0, punct_cnt = 0;
-    
-    size_t len = strlen(str);
-    printf("分析字符串: \"%s\"\n", str);
-    printf("字符串长度: %zu\n\n", len);
-    
-    for (size_t i = 0; i < len; i++) {
-        unsigned char ch = str[i];  // 避免符号扩展问题
-        
-        // 字母数字分类
-        if (isalnum(ch)) alnum_cnt++;
-        if (isalpha(ch)) alpha_cnt++;
-        if (isdigit(ch)) digit_cnt++;
-        
-        // 空白字符分类（重点区分）
-        if (isblank(ch)) blank_cnt++;   // 仅空格和Tab
-        if (isspace(ch)) space_cnt++;   // 所有空白字符
-        
-        // 可打印字符分类
-        if (isprint(ch)) print_cnt++;   // 包含空格
-        if (isgraph(ch)) graph_cnt++;   // 不包含空格
-        
-        // 大小写统计
-        if (isupper(ch)) upper_cnt++;
-        if (islower(ch)) lower_cnt++;
-        
-        // 标点符号
-        if (ispunct(ch)) punct_cnt++;
-    }
-    
-    printf("=== 统计结果 ===\n");
-    printf("字母数字字符数: %d\n", alnum_cnt);
-    printf("字母字符数: %d\n", alpha_cnt);
-    printf("数字字符数: %d\n", digit_cnt);
-    printf("空白字符数 (isblank): %d\n", blank_cnt);
-    printf("空格字符数 (isspace): %d\n", space_cnt);
-    printf("可打印字符数 (isprint): %d\n", print_cnt);
-    printf("可打印字符数 (isgraph): %d\n", graph_cnt);
-    printf("大写字母数: %d\n", upper_cnt);
-    printf("小写字母数: %d\n", lower_cnt);
-    printf("标点符号数: %d\n", punct_cnt);
-}
 
-// 演示字符转换函数
-void demonstrate_convert_functions() {
-    char text[] = "Hello, World! 2026";
-    printf("\n转换前: %s\n", text);
-    
-    // 转换为大写
-    for (int i = 0; text[i]; i++) {
-        text[i] = toupper(text[i]);
-    }
-    printf("转换为大写: %s\n", text);
-    
-    // 转换为小写
-    for (int i = 0; text[i]; i++) {
-        text[i] = tolower(text[i]);
-    }
-    printf("转换为小写: %s\n", text);
-}
 
-// 演示 isblank 和 isspace 的区别
-void demonstrate_blank_vs_space() {
-    printf("\n=== isblank vs isspace 对比 ===\n");
-    const char* test_chars = " \t\n\r\v\f";
-    
-    for (int i = 0; test_chars[i]; i++) {
-        unsigned char ch = test_chars[i];
-        printf("字符 '\\x%02X': isblank=%d, isspace=%d\n", 
-               ch, isblank(ch), isspace(ch));
-    }
-}
+int main()
+{
+	const char* str = "Hello World\r\n 2026-01-23\t\v";
+	size_t len = strlen(str);
+	for (size_t i = 0; i < len; i++) {
+		if (str[i] == '\r') std::cout << "\\r: ";
+		else if (str[i] == '\n') std::cout << "\\n: ";
+		else if (str[i] == '\t') std::cout << "\\t: ";
+		else if (str[i] == '\v') std::cout << "\\v: ";
+		else std::cout << str[i] << ": ";
+        
+		if (isalnum(str[i])) std::cout << "Alnum ";
+		if (isalpha(str[i])) std::cout << "Alpha ";
+		if (isdigit(str[i])) std::cout << "Digit ";
+		if (isxdigit(str[i])) std::cout << "XDigit ";
+        
+		if (isascii(str[i])) std::cout << "Ascii ";
+        
+		if (isblank(str[i])) std::cout << "Blank ";
+		if (isspace(str[i])) std::cout << "Space ";
+        
+		if (isprint(str[i])) std::cout << "Print ";
+		if (isgraph(str[i])) std::cout << "Graph ";
+        
+		if (iscntrl(str[i])) std::cout << "Cntrl ";
+		if (ispunct(str[i])) std::cout << "Punct ";
 
-int main() {
-    demonstrate_char_functions();
-    demonstrate_convert_functions();
-    demonstrate_blank_vs_space();
-    
-    return 0;
+		std::cout << std::endl;
+	}
+
+	return 0;
 }
 ```
 

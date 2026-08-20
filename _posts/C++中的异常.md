@@ -234,7 +234,8 @@ _Unwind_RaiseException(exception)
 
     context = 当前CPU状态;
 
-    /* 根据 eip 从 eh_frame 获取当前 frame */
+     /* 根据 eip 从 eh_frame 获取当前 frame
+        然后视情况从当前frame开始遍历 eh_frame */
 	while(frame = 当前frame : eh_frame) {
         CFA = frame.CFA;
         ret = mem[CFA - 4];
@@ -242,7 +243,7 @@ _Unwind_RaiseException(exception)
         /* 根据 ret 寻找 landing_pad */
         for (item : gcc_except_table) {
             if (exception == item.exception &&
-               ret属于item.eip的范围) {
+               ret属于 item.eip 的范围) {
                 ebp = mem[CFA - 8];
                 esp = CFA;
                 landing_pad = item.landing_pad;
@@ -253,43 +254,66 @@ _Unwind_RaiseException(exception)
             }
         }
     }
-    
-    while(true)
-    {
-	
-        ret = frame.ret; // 获取当前栈帧的返回地址
-
-        // 根据异常类型和返回地址在.eh_frame查找着陆点对应的栈帧
-        // 因为函数的栈帧基本由ebp和esp决定,所以返回这俩就可以了 
-		frame = eh_frame(exception, ret); 
-        
-        					   
-        result =
-          personality(
-             frame,
-             SEARCH_PHASE,
-             exception
-          );
-
-
-        if(result != HANDLER_FOUND)
-            break;
-        
-        // 根据异常类型返回地址在.gcc_except_table查找着陆点
-        landing_pad = gcc_except_table(exception,ret);
-        
-        set_frame(frame); // 设置着陆点的栈帧
-        
-        jmp landing_pad // 直接跳转到着陆点
-    }
-
-
+	abort();
 }
 ```
 
 编译器为了实现异常机制，会预先在可执行文件中添加两个表：`.eh_frame` 和 `.gcc_execpt_table`。
 
-- `.eh_frame`这个表格制定的是一套规则， 它可以根据当前的 `eip` 所在的范围获取 `CFA`（规则制定的栈位置的起点，比如`CFA = ebp + 8`），然后再根据 `CFA` 获取到当前的栈帧中存储的上一个
+- `.eh_frame`这个表制定的是一套规则， 它可以根据当前的 `eip` 所在的范围获取 `CFA`（规则制定的栈位置的起点，比如`CFA = ebp + 8`），然后再根据 `CFA` 获取到当前的栈帧中存储的调用者的 `ebp`，因为 C++ 中使用变量都是 `[ebp + n]` ，因此只要获取 `ebp` 的值就能掌握所有变量。然后再根据 `CFA` 获取到当前的栈帧中存储的调用者的 `ret`，提取 `ret` 的值拿来和 `.gcc_execpt_table` 对比
+-  `.gcc_execpt_table` 这个表主要记录的是 `ret` 与 `landing_pad` 之间的对应关系。`ret` 记录的是调用者的地址，程序可以根据这个表获取到调用者的着陆点。然后就可以跳转到着陆点做清理工作。
+
+这是一个循环调用妄图找到符合要求的第一个`landing_pad`的过程，或者说是一个不断栈展开的过程，遍历`eh_frame`就是在栈展开。如果到最后一直找不到这个`landing_pad`，说明用户就没有写异常处理的代码，此时程序应该异常终止。也就是说遍历完后就可以 `abort` 了
+
+### landing_pad
+
+前面讲了这么久的 landing_pad，究竟什么是landing_pad。
+
+我将其称为**着陆点**，因为它总是 _Unwind_RaiseException 要寻找并降落的地址。
+
+一个可能会抛出异常的函数，它的返回处理代码会被编译成**两段指令**，也就是说函数的源代码中的右花括号`}`会被编译成两段指令，一段是函数正常返回的指令，另一段就是` landing_pad`。
+
+`try` 末尾的右花括号`}`同样也会被编译成两端指令，一段是函数正常返回的指令，另一段就是` landing_pad`。
+
+landing_pad 的作用就是释放从函数开头到抛出异常`throw`之间的变量。它做的事情就是：
+
+- 调用栈上对象的析构函数
+- `delete` 在这之间的 `new` 的指针
+
+⭐因为仅仅只是 `delete`指针，并不会调用堆上对象的析构函数。所以`new`出来的对象在异常处理机制中会发生内存泄漏。
+
+因为一个函数中会有多个地方抛出异常`throw`，而从函数开头到不同的`throw`之间会定义不同数量和不同类型的对象。因此一段 `landing_pad` 会被打上多个标签（`.L18`、`.L19`、`.L20`），也就是说会有多个着陆点。因为从函数开头到不同的`throw`之间会有共同的要释放的变量，所以不同的着陆点也会共用一段指令释放共有的变量。
+
+而`landing_pad`的最后一条指总是`call _Unwind_Resume`，也就是说处理完变量释放后，都会统一跳转到这个函数中去。
+
+`try` 的 `landing_pad`在处理完变量释放后，会对比异常类型和`catch`中捕获的类型。如果能对上就跳转到相应的异常处理代码，如果都对不上就会执行`call _Unwind_Resume`，说明这一层的`try-catch`还没捕获到异常，交给下一层处理了。
+
+#### _Unwind_Resume
+
+这个函数的源代码也很简单，就是直接调用`_Unwind_RaiseException`
+
+```c
+void _Unwind_Resume(exception) {
+    _Unwind_RaiseException(exception);
+    abort();
+}
+```
+
+它仅仅只是一个入口。
+
+#### `__cxa_begin_catch` 和 `__cxa_end_catch`
+
+这两个函数就是 `catch` 展开后要调用的两个函数。
+
+try的结尾处理好`try`块里的变量释放后
+
+进入catch后先执行`call __cxa_begin_catch`，它负责获取先前在堆区构造的异常对象
+
+然后进入用户在`catch`块内写的代码
+
+最后执行 `call __cxa_end_catch ` 表示异常处理结束，它会负责释放析构在堆区的异常对象。
+
+在 `call __cxa_end_catch` 后面会紧跟着一个 `jmp`指令。它表示执行完异常处理代码后跳转继续正常执行 `try-catch` 后面的代码。
 
 
 
